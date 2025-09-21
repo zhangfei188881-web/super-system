@@ -1,0 +1,14 @@
+{
+  "name": "super-system",
+  "version": "1.0.0",
+  "description": "A minimal chat application inspired by QQ with real-time messaging via Server-Sent Events.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node -e \"console.log('No automated tests specified.');\""
+  },
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs"
+}
