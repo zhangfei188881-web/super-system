@@ -1,7 +1,7 @@
 {
   "name": "super-system",
   "version": "1.0.0",
-  "description": "A minimal chat application inspired by QQ with real-time messaging via Server-Sent Events.",
+  "description": "A campus service portal delivering canteen hot sales, errands, and live customer support.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

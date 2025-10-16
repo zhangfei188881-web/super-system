@@ -1,196 +1,305 @@
 (() => {
-  const statusIndicator = document.getElementById('status-indicator');
-  const statusText = document.getElementById('status-text');
-  const messageList = document.getElementById('message-list');
-  const messageForm = document.getElementById('message-form');
-  const messageInput = document.getElementById('message-input');
-  const messageTemplate = document.getElementById('message-template');
-  const nameDialog = document.getElementById('name-dialog');
-  const nameForm = document.getElementById('name-form');
-  const nameInput = document.getElementById('name-input');
-  const cancelNameButton = document.getElementById('cancel-name');
-  const changeNameButton = document.getElementById('change-name');
-  const profileName = document.getElementById('profile-name');
-  const profileAvatar = document.getElementById('profile-avatar');
+  const announcementList = document.getElementById('announcement-list');
+  const serviceGrid = document.getElementById('service-grid');
+  const floorTabs = document.getElementById('floor-tabs');
+  const floorContent = document.getElementById('floor-content');
+  const ondemandGrid = document.getElementById('ondemand-grid');
+  const supportInfo = document.getElementById('support-info');
+  const supportNotice = document.getElementById('support-notice');
+  const supportButton = document.getElementById('support-button');
+  const contactButton = document.getElementById('contact-button');
+  const contactFab = document.getElementById('contact-fab');
+  const contactDialog = document.getElementById('contact-dialog');
+  const contactForm = document.getElementById('contact-form');
+  const contactCancel = document.getElementById('contact-cancel');
+  const contactHint = document.getElementById('contact-hint');
+  const contactSubmit = document.getElementById('contact-submit');
+  const toast = document.getElementById('toast');
+  const searchInput = document.getElementById('global-search');
+  const footerYear = document.getElementById('footer-year');
+  const heroBrand = document.getElementById('hero-brand');
+  const heroSlogan = document.getElementById('hero-slogan');
+  const statOrders = document.getElementById('stat-orders');
+  const statDelivery = document.getElementById('stat-delivery');
+  const statSatisfaction = document.getElementById('stat-satisfaction');
 
-  let username = localStorage.getItem('super-system-username') || '';
-  let eventSource;
-  let historyLoaded = false;
+  let dashboardData = null;
+  let activeFloorId = null;
+  let servicesCache = [];
+  let ondemandCache = [];
+  let toastTimer = null;
 
-  function updateStatus(type, text) {
-    statusIndicator.classList.remove('status-online', 'status-offline');
-    if (type === 'online') {
-      statusIndicator.classList.add('status-online');
-    } else if (type === 'offline') {
-      statusIndicator.classList.add('status-offline');
+  function setFooterYear() {
+    if (footerYear) {
+      footerYear.textContent = new Date().getFullYear();
     }
-    statusText.textContent = text;
   }
 
-  function avatarInitials(name) {
-    if (!name) return '?';
-    const trimmed = name.trim();
-    if (!trimmed) return '?';
-    return trimmed.slice(0, 1).toUpperCase();
+  function showToast(message, type = 'info') {
+    if (!toast) return;
+    clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.dataset.type = type;
+    toast.hidden = false;
+    toast.classList.add('show');
+    toastTimer = setTimeout(() => {
+      toast.classList.remove('show');
+      toastTimer = setTimeout(() => {
+        toast.hidden = true;
+      }, 220);
+    }, 3800);
   }
 
-  function setUsername(name) {
-    username = name.trim();
-    if (username) {
-      localStorage.setItem('super-system-username', username);
-      profileName.textContent = username;
-    } else {
-      localStorage.removeItem('super-system-username');
-      profileName.textContent = '未命名用户';
-    }
-    profileAvatar.textContent = avatarInitials(username);
+  function escapeHtml(input) {
+    return input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
-  function ensureUsername() {
-    if (username) {
-      profileAvatar.textContent = avatarInitials(username);
-      profileName.textContent = username;
+  function renderAnnouncements(list = []) {
+    if (!announcementList) return;
+    if (!list.length) {
+      announcementList.innerHTML = '<p class="empty">暂无公告</p>';
       return;
     }
 
-    openNameDialog();
-  }
-
-  function openNameDialog() {
-    if (typeof nameDialog?.showModal === 'function') {
-      nameInput.value = username;
-      nameDialog.showModal();
-      setTimeout(() => nameInput.focus(), 50);
-    } else {
-      const result = window.prompt('请输入你的昵称：', username || '');
-      if (result !== null) {
-        const trimmed = result.trim().slice(0, 32);
-        if (trimmed) {
-          setUsername(trimmed);
-        }
-      }
-    }
-  }
-
-  cancelNameButton?.addEventListener('click', () => {
-    if (typeof nameDialog?.close === 'function') {
-      nameDialog.close();
-    }
-  });
-
-  nameForm?.addEventListener('submit', event => {
-    event.preventDefault();
-    const value = nameInput.value.trim().slice(0, 32);
-    if (value) {
-      setUsername(value);
-      if (typeof nameDialog?.close === 'function') {
-        nameDialog.close();
-      }
-    }
-  });
-
-  changeNameButton?.addEventListener('click', () => {
-    openNameDialog();
-  });
-
-  function formatTimestamp(timestamp) {
-    if (!timestamp) return '';
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        month: '2-digit',
-        day: '2-digit'
-      });
-    } catch (error) {
-      return '';
-    }
-  }
-
-  function createMessageElement(message) {
-    const clone = messageTemplate.content.firstElementChild.cloneNode(true);
-    const author = clone.querySelector('.author');
-    const time = clone.querySelector('.time');
-    const content = clone.querySelector('.content');
-    author.textContent = message.user || '匿名用户';
-    time.textContent = formatTimestamp(message.timestamp);
-    content.textContent = message.text;
-    if (username && message.user === username) {
-      clone.classList.add('self');
-    }
-    return clone;
-  }
-
-  function renderMessages(messages) {
     const fragment = document.createDocumentFragment();
-    for (const message of messages) {
-      fragment.appendChild(createMessageElement(message));
-    }
-    messageList.innerHTML = '';
-    messageList.appendChild(fragment);
-    messageList.scrollTop = messageList.scrollHeight;
+    list.forEach(item => {
+      const card = document.createElement('article');
+      card.className = `announcement-card announcement-${item.level || 'info'}`;
+      card.innerHTML = `
+        <header>
+          <span class="announcement-date">${escapeHtml(item.date || '')}</span>
+          <h3>${escapeHtml(item.title || '')}</h3>
+        </header>
+        <p>${escapeHtml(item.description || '')}</p>
+      `;
+      fragment.appendChild(card);
+    });
+    announcementList.innerHTML = '';
+    announcementList.appendChild(fragment);
   }
 
-  function appendMessage(message) {
-    messageList.appendChild(createMessageElement(message));
-    messageList.scrollTop = messageList.scrollHeight;
+  function createServiceCard(item) {
+    const card = document.createElement('article');
+    card.className = 'service-card';
+    card.style.setProperty('--accent', item.accent || 'linear-gradient(135deg,#84fab0,#8fd3f4)');
+    card.innerHTML = `
+      <span class="service-icon" aria-hidden="true">${escapeHtml(item.icon || '📦')}</span>
+      <div>
+        <h3>${escapeHtml(item.name || '')}</h3>
+        <p>${escapeHtml(item.description || '')}</p>
+      </div>
+      <button type="button" class="service-action" aria-label="立即前往${escapeHtml(item.name || '')}">
+        进入
+      </button>
+    `;
+    return card;
   }
 
-  function connect() {
-    if (eventSource) {
-      eventSource.close();
-    }
-
-    updateStatus('offline', '正在连接...');
-    eventSource = new EventSource('/events');
-
-    eventSource.addEventListener('open', () => {
-      updateStatus('online', '已连接');
-    });
-
-    eventSource.addEventListener('error', () => {
-      updateStatus('offline', '连接异常，正在重试...');
-    });
-
-    eventSource.addEventListener('history', event => {
-      try {
-        const payload = JSON.parse(event.data || '[]');
-        renderMessages(payload);
-        historyLoaded = true;
-      } catch (error) {
-        console.error('无法解析历史记录', error);
-      }
-    });
-
-    eventSource.addEventListener('message', event => {
-      try {
-        const payload = JSON.parse(event.data || '{}');
-        if (!historyLoaded) {
-          return;
-        }
-        appendMessage(payload);
-      } catch (error) {
-        console.error('无法解析消息', error);
-      }
-    });
-  }
-
-  messageForm?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const text = messageInput.value.trim();
-    if (!text) {
+  function renderServices(list = []) {
+    if (!serviceGrid) return;
+    if (!list.length) {
+      serviceGrid.innerHTML = '<p class="empty">暂无匹配的服务，换个关键词试试。</p>';
       return;
     }
+    const fragment = document.createDocumentFragment();
+    list.forEach(item => fragment.appendChild(createServiceCard(item)));
+    serviceGrid.innerHTML = '';
+    serviceGrid.appendChild(fragment);
+  }
 
-    const payload = {
-      user: username || '匿名用户',
-      text
-    };
+  function renderFloorTabs(floors = []) {
+    if (!floorTabs) return;
+    const fragment = document.createDocumentFragment();
+    floors.forEach((floor, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'floor-tab';
+      button.textContent = floor.name;
+      button.dataset.floorId = floor.id;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+      button.addEventListener('click', () => setActiveFloor(floor.id));
+      fragment.appendChild(button);
+    });
+    floorTabs.innerHTML = '';
+    floorTabs.appendChild(fragment);
+    if (floors.length) {
+      setActiveFloor(floors[0].id);
+    }
+  }
 
-    messageForm.classList.add('pending');
+  function createStallCard(stall) {
+    const card = document.createElement('article');
+    card.className = 'stall-card';
+    const tagList = (stall.tags || []).map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+    card.innerHTML = `
+      <div class="stall-title">
+        <h3>${escapeHtml(stall.name || '')}</h3>
+        <span class="stall-price">${escapeHtml(stall.price || '')}</span>
+      </div>
+      <p class="stall-meta">今日销量 <strong>${escapeHtml(String(stall.soldToday || 0))}</strong> 份</p>
+      <div class="stall-tags">${tagList}</div>
+      <button type="button" class="stall-action">立即下单</button>
+    `;
+    return card;
+  }
+
+  function setActiveFloor(floorId) {
+    if (!dashboardData || !floorContent) return;
+    if (activeFloorId === floorId) return;
+    activeFloorId = floorId;
+    const floors = dashboardData.featuredFloors || [];
+    const current = floors.find(floor => floor.id === floorId);
+    if (!current) return;
+
+    const tabButtons = floorTabs?.querySelectorAll('.floor-tab');
+    tabButtons?.forEach(btn => {
+      const selected = btn.dataset.floorId === floorId;
+      btn.classList.toggle('active', selected);
+      btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+
+    const fragment = document.createDocumentFragment();
+    const infoCard = document.createElement('div');
+    infoCard.className = 'floor-summary';
+    infoCard.innerHTML = `
+      <div>
+        <h3>${escapeHtml(current.name || '')}</h3>
+        <p>${escapeHtml(current.waiting || '')}</p>
+      </div>
+      <div>
+        <p class="floor-distance">${escapeHtml(current.distance || '')}</p>
+        <p class="floor-highlight">亮点：${escapeHtml((current.highlights || []).join('、'))}</p>
+      </div>
+    `;
+    fragment.appendChild(infoCard);
+
+    (current.stalls || []).forEach(stall => fragment.appendChild(createStallCard(stall)));
+    if (!current.stalls || !current.stalls.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty';
+      empty.textContent = '该楼层暂未开放线上订餐';
+      fragment.appendChild(empty);
+    }
+    floorContent.innerHTML = '';
+    floorContent.appendChild(fragment);
+  }
+
+  function createOndemandCard(item) {
+    const card = document.createElement('article');
+    card.className = 'ondemand-card';
+    card.innerHTML = `
+      <div class="ondemand-icon" aria-hidden="true">${escapeHtml(item.icon || '🛵')}</div>
+      <div class="ondemand-body">
+        <div class="ondemand-title">
+          <h3>${escapeHtml(item.name || '')}</h3>
+          <span>${escapeHtml(item.price || '')}</span>
+        </div>
+        <p>${escapeHtml(item.description || '')}</p>
+        <p class="ondemand-meta">预计：${escapeHtml(item.eta || '')}</p>
+      </div>
+      <button type="button" class="ondemand-action">立即预约</button>
+    `;
+    return card;
+  }
+
+  function renderOndemand(list = []) {
+    if (!ondemandGrid) return;
+    if (!list.length) {
+      ondemandGrid.innerHTML = '<p class="empty">暂未找到相关跑腿服务。</p>';
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    list.forEach(item => fragment.appendChild(createOndemandCard(item)));
+    ondemandGrid.innerHTML = '';
+    ondemandGrid.appendChild(fragment);
+  }
+
+  function renderSupport(contact = {}) {
+    if (!supportInfo) return;
+    const { hotline, wechat, email, serviceHours, location, notice } = contact;
+    supportNotice.textContent = notice || '提交后我们将尽快联系您。';
+    contactHint.textContent = serviceHours ? `客服在线时间：${serviceHours}` : '';
+
+    const supportItems = [
+      { icon: '📞', label: '客服热线', value: hotline },
+      { icon: '💬', label: '企业微信', value: wechat },
+      { icon: '📧', label: '服务邮箱', value: email },
+      { icon: '📍', label: '线下客服点', value: location }
+    ].filter(item => item.value);
+
+    const fragment = document.createDocumentFragment();
+    supportItems.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'support-row';
+      row.innerHTML = `
+        <span class="support-icon" aria-hidden="true">${escapeHtml(item.icon)}</span>
+        <div>
+          <p class="support-label">${escapeHtml(item.label)}</p>
+          <p class="support-value">${escapeHtml(item.value)}</p>
+        </div>
+      `;
+      fragment.appendChild(row);
+    });
+    supportInfo.innerHTML = '';
+    supportInfo.appendChild(fragment);
+  }
+
+  function filterDataByKeyword(keyword) {
+    if (!keyword) {
+      renderServices(servicesCache);
+      renderOndemand(ondemandCache);
+      return;
+    }
+    const lower = keyword.toLowerCase();
+    const filteredServices = servicesCache.filter(item => {
+      const text = `${item.name || ''} ${item.description || ''}`.toLowerCase();
+      return text.includes(lower);
+    });
+    const filteredOndemand = ondemandCache.filter(item => {
+      const text = `${item.name || ''} ${item.description || ''} ${item.eta || ''}`.toLowerCase();
+      return text.includes(lower);
+    });
+    renderServices(filteredServices);
+    renderOndemand(filteredOndemand);
+  }
+
+  function openContactDialog() {
+    if (!contactDialog) return;
+    if (typeof contactDialog.showModal === 'function') {
+      contactDialog.showModal();
+    } else {
+      contactDialog.setAttribute('open', '');
+    }
+    requestAnimationFrame(() => {
+      document.getElementById('contact-name')?.focus();
+    });
+  }
+
+  function closeContactDialog() {
+    if (!contactDialog) return;
+    if (typeof contactDialog.close === 'function') {
+      contactDialog.close();
+    } else {
+      contactDialog.removeAttribute('open');
+    }
+  }
+
+  async function submitContactForm(event) {
+    event.preventDefault();
+    if (!contactForm) return;
+    const formData = new FormData(contactForm);
+    const payload = Object.fromEntries(formData.entries());
+    contactSubmit.disabled = true;
+    contactSubmit.textContent = '提交中...';
+
     try {
-      const response = await fetch('/message', {
+      const response = await fetch('/api/contact', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -198,28 +307,88 @@
         body: JSON.stringify(payload)
       });
 
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        updateStatus('offline', result.error || '发送失败，请稍后再试');
-      } else {
-        messageInput.value = '';
-        updateStatus('online', '已连接');
+        throw new Error(result.error || '提交失败，请稍后再试');
       }
+
+      showToast(result.message || '客服已收到您的消息，我们会尽快回复。', 'success');
+      closeContactDialog();
+      contactForm.reset();
     } catch (error) {
-      updateStatus('offline', '网络异常，消息未发送');
+      showToast(error.message || '网络异常，请稍后再试', 'error');
     } finally {
-      messageForm.classList.remove('pending');
-      messageInput.focus();
+      contactSubmit.disabled = false;
+      contactSubmit.textContent = '提交咨询';
     }
-  });
+  }
 
-  window.addEventListener('focus', () => {
-    if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
-      connect();
+  async function loadDashboard() {
+    try {
+      const response = await fetch('/api/home');
+      if (!response.ok) {
+        throw new Error('无法获取校园服务数据');
+      }
+      dashboardData = await response.json();
+      servicesCache = dashboardData.categories || [];
+      ondemandCache = dashboardData.onDemandServices || [];
+
+      if (heroBrand && dashboardData.hero?.brand) {
+        heroBrand.textContent = dashboardData.hero.brand;
+      }
+      if (heroSlogan && dashboardData.hero?.slogan) {
+        heroSlogan.textContent = dashboardData.hero.slogan;
+      }
+      if (statOrders) {
+        const orders = dashboardData.hero?.stats?.completedOrdersToday;
+        statOrders.textContent = orders ? `${orders} 单` : '—';
+      }
+      if (statDelivery) {
+        const delivery = dashboardData.hero?.stats?.averageDeliveryMinutes;
+        statDelivery.textContent = delivery ? `${delivery} 分钟` : '—';
+      }
+      if (statSatisfaction) {
+        const satisfaction = dashboardData.hero?.stats?.serviceSatisfaction;
+        statSatisfaction.textContent = satisfaction ? `${satisfaction}%` : '—';
+      }
+
+      renderAnnouncements(dashboardData.announcements);
+      renderServices(servicesCache);
+      renderFloorTabs(dashboardData.featuredFloors);
+      renderOndemand(ondemandCache);
+      renderSupport(dashboardData.contact);
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || '系统繁忙，请稍后再试', 'error');
+      if (announcementList) {
+        announcementList.innerHTML = '<p class="empty">暂时无法获取公告，请稍后刷新。</p>';
+      }
     }
-  });
+  }
 
-  ensureUsername();
-  setUsername(username);
-  connect();
+  function bindEvents() {
+    contactButton?.addEventListener('click', openContactDialog);
+    contactFab?.addEventListener('click', openContactDialog);
+    supportButton?.addEventListener('click', openContactDialog);
+    contactCancel?.addEventListener('click', () => {
+      contactForm?.reset();
+      closeContactDialog();
+    });
+    contactForm?.addEventListener('submit', submitContactForm);
+    contactDialog?.addEventListener('close', () => {
+      contactForm?.reset();
+      contactSubmit.disabled = false;
+      contactSubmit.textContent = '提交咨询';
+    });
+    searchInput?.addEventListener('input', event => {
+      const keyword = event.target.value.trim();
+      filterDataByKeyword(keyword);
+    });
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    setFooterYear();
+    bindEvents();
+    loadDashboard();
+  });
 })();
